@@ -1,0 +1,12 @@
+# janitor.yaml — example configuration file
+# All values can be overridden by CLI flags or env vars (JANITOR_* prefix).
+# Priority: CLI flag > env var > config file > built-in default
+
+max_age: 72h
+concurrency: 3
+severity: CRITICAL,HIGH
+webhook: ""         # e.g. https://hooks.slack.com/services/xxx/yyy/zzz
+log_level: info
+output: text
+output_file: ""     # e.g. /var/log/janitor-report.json
+socket: /var/run/docker.sock
