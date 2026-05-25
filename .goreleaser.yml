@@ -1,0 +1,57 @@
+version: 2
+
+project_name: go-janitor
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: go-janitor
+    main: ./cmd/janitor
+    binary: go-janitor
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .ShortCommit }}
+      - -X main.date={{ .Date }}
+
+archives:
+  - id: go-janitor
+    builds:
+      - go-janitor
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+    files:
+      - README.md
+      - LICENSE
+      - janitor.yaml.example
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
+
+release:
+  github:
+    owner: danangamw
+    name: go-janitor
+  draft: false
+  prerelease: auto
+  name_template: "{{ .Tag }}"
