@@ -21,7 +21,7 @@ Docker maintenance & security audit CLI. Cleans up Docker garbage and audits run
 ```bash
 make build && make install
 # or one-liner:
-go install github.com/danangamw/go-janitor/cmd/janitor@latest
+go install github.com/danangamw/docker-janitor/cmd/janitor@latest
 ```
 
 ## Usage
