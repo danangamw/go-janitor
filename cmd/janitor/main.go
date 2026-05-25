@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 	"time"
 
@@ -26,6 +27,32 @@ var (
 	commit  = "none"
 	date    = "unknown"
 )
+
+func init() {
+	// Fallback: read module info embedded by `go install` when ldflags are not set.
+	if version != "dev" {
+		return
+	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return
+	}
+	if v := info.Main.Version; v != "" && v != "(devel)" {
+		version = v
+	}
+	for _, s := range info.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			if len(s.Value) > 7 {
+				commit = s.Value[:7]
+			} else {
+				commit = s.Value
+			}
+		case "vcs.time":
+			date = s.Value
+		}
+	}
+}
 
 func main() {
 	root := buildRoot()
