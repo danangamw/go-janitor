@@ -32,7 +32,6 @@ archives:
     format: tar.gz
     files:
       - README.md
-      - LICENSE
       - janitor.yaml.example
 
 checksum:
