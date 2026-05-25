@@ -299,7 +299,7 @@ func buildVersionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print version information",
 		Run: func(cmd *cobra.Command, _ []string) {
-			fmt.Printf("go-janitor %s (built: %s)\n", version, date)
+			fmt.Printf("go-janitor %s\n", version)
 		},
 	}
 }
