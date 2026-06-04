@@ -340,14 +340,26 @@ func initRuntime(cfg *config.Config) (runtime.ContainerRuntime, error) {
 	if engine == "podman" && (socket == "/var/run/docker.sock" || socket == "") {
 		slog.Info("podman engine selected, trying to auto-detect podman socket")
 		rootless := getPodmanRootlessSocket()
+
+		found := false
 		if rootless != "" {
 			if _, err := os.Stat(rootless); err == nil {
 				socket = rootless
-			} else if _, err := os.Stat("/run/podman/podman.sock"); err == nil {
-				socket = "/run/podman/podman.sock"
+				found = true
 			}
-		} else if _, err := os.Stat("/run/podman/podman.sock"); err == nil {
-			socket = "/run/podman/podman.sock"
+		}
+		if !found {
+			if _, err := os.Stat("/run/podman/podman.sock"); err == nil {
+				socket = "/run/podman/podman.sock"
+				found = true
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf(
+				"podman socket not found (tried %s and /run/podman/podman.sock)\n"+
+					"  hint: enable it with: systemctl --user start podman.socket",
+				rootless,
+			)
 		}
 	}
 
