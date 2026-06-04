@@ -5,13 +5,12 @@ import (
 	"log/slog"
 	"time"
 
-	dockerclient "github.com/docker/docker/client"
-
 	"github.com/danangamw/go-janitor/internal/reporter"
+	"github.com/danangamw/go-janitor/internal/runtime"
 )
 
-// Run executes the full Docker Trash Collector pipeline and returns aggregated stats.
-func Run(ctx context.Context, cli *dockerclient.Client, maxAge time.Duration, dryRun bool) reporter.CleanerStats {
+// Run executes the full Trash Collector pipeline and returns aggregated stats.
+func Run(ctx context.Context, cli runtime.ContainerRuntime, maxAge time.Duration, dryRun bool) reporter.CleanerStats {
 	var stats reporter.CleanerStats
 
 	slog.Info("starting trash collector", "component", "cleaner", "dry_run", dryRun, "max_age", maxAge)

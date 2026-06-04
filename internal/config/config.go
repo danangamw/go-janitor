@@ -17,6 +17,7 @@ type Config struct {
 	Output      string        `mapstructure:"output"`
 	OutputFile  string        `mapstructure:"output_file"`
 	Webhook     string        `mapstructure:"webhook"`
+	Engine      string        `mapstructure:"engine"`
 	Socket      string        `mapstructure:"socket"`
 	LogLevel    string        `mapstructure:"log_level"`
 	ConfigFile  string        `mapstructure:"-"`
@@ -37,6 +38,7 @@ func Load(cfgFile string) (*Config, error) {
 	viper.SetDefault("output", "text")
 	viper.SetDefault("output_file", "")
 	viper.SetDefault("webhook", "")
+	viper.SetDefault("engine", "docker")
 	viper.SetDefault("socket", "/var/run/docker.sock")
 	viper.SetDefault("log_level", "info")
 
@@ -75,6 +77,10 @@ func (c *Config) validate() error {
 	validLevels := map[string]bool{"debug": true, "info": true, "warn": true, "error": true}
 	if !validLevels[strings.ToLower(c.LogLevel)] {
 		return fmt.Errorf("log_level must be one of debug/info/warn/error, got %q", c.LogLevel)
+	}
+	validEngines := map[string]bool{"docker": true, "podman": true, "auto": true}
+	if !validEngines[strings.ToLower(c.Engine)] {
+		return fmt.Errorf("engine must be one of docker/podman/auto, got %q", c.Engine)
 	}
 	return nil
 }

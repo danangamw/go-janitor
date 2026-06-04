@@ -4,21 +4,18 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/volume"
-	dockerclient "github.com/docker/docker/client"
+	"github.com/danangamw/go-janitor/internal/runtime"
 )
 
 // RemoveOrphanedVolumes removes volumes not mounted by any container (active or stopped).
-func RemoveOrphanedVolumes(ctx context.Context, cli *dockerclient.Client, dryRun bool) (int, error) {
-	f := filters.NewArgs(filters.Arg("dangling", "true"))
-	resp, err := cli.VolumeList(ctx, volume.ListOptions{Filters: f})
+func RemoveOrphanedVolumes(ctx context.Context, cli runtime.ContainerRuntime, dryRun bool) (int, error) {
+	volumes, err := cli.ListDanglingVolumes(ctx)
 	if err != nil {
 		return 0, err
 	}
 
 	removed := 0
-	for _, v := range resp.Volumes {
+	for _, v := range volumes {
 		prefix := ""
 		if dryRun {
 			prefix = "[DRY-RUN] "
@@ -35,7 +32,7 @@ func RemoveOrphanedVolumes(ctx context.Context, cli *dockerclient.Client, dryRun
 			continue
 		}
 
-		if err := cli.VolumeRemove(ctx, v.Name, false); err != nil {
+		if err := cli.RemoveVolume(ctx, v.Name); err != nil {
 			slog.Warn("failed to remove volume", "name", v.Name, "error", err)
 			continue
 		}

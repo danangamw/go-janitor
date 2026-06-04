@@ -5,16 +5,13 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/image"
-	dockerclient "github.com/docker/docker/client"
+	"github.com/danangamw/go-janitor/internal/runtime"
 )
 
 // RemoveDanglingImages removes images with no tag and no referencing container.
 // Returns the total bytes freed.
-func RemoveDanglingImages(ctx context.Context, cli *dockerclient.Client, dryRun bool) (int64, int, error) {
-	f := filters.NewArgs(filters.Arg("dangling", "true"))
-	images, err := cli.ImageList(ctx, image.ListOptions{Filters: f})
+func RemoveDanglingImages(ctx context.Context, cli runtime.ContainerRuntime, dryRun bool) (int64, int, error) {
+	images, err := cli.ListDanglingImages(ctx)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -40,7 +37,7 @@ func RemoveDanglingImages(ctx context.Context, cli *dockerclient.Client, dryRun 
 			continue
 		}
 
-		_, err := cli.ImageRemove(ctx, img.ID, image.RemoveOptions{Force: false, PruneChildren: true})
+		err := cli.RemoveImage(ctx, img.ID)
 		if err != nil {
 			slog.Warn("failed to remove image", "id", img.ID, "error", err)
 			continue
@@ -55,12 +52,8 @@ func RemoveDanglingImages(ctx context.Context, cli *dockerclient.Client, dryRun 
 
 // RemoveStoppedContainers removes containers in exited/dead state older than maxAge.
 // Returns bytes freed and count removed.
-func RemoveStoppedContainers(ctx context.Context, cli *dockerclient.Client, maxAge time.Duration, dryRun bool) (int64, int, error) {
-	f := filters.NewArgs(
-		filters.Arg("status", "exited"),
-		filters.Arg("status", "dead"),
-	)
-	containers, err := cli.ContainerList(ctx, containerListOptions(f))
+func RemoveStoppedContainers(ctx context.Context, cli runtime.ContainerRuntime, maxAge time.Duration, dryRun bool) (int64, int, error) {
+	containers, err := cli.ListContainers(ctx, true)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -70,6 +63,10 @@ func RemoveStoppedContainers(ctx context.Context, cli *dockerclient.Client, maxA
 	var removed int
 
 	for _, c := range containers {
+		if c.State != "exited" && c.State != "dead" {
+			continue
+		}
+
 		created := time.Unix(c.Created, 0)
 		if created.After(cutoff) {
 			slog.Debug("skipping container — not old enough", "id", c.ID, "created", created)
@@ -80,10 +77,19 @@ func RemoveStoppedContainers(ctx context.Context, cli *dockerclient.Client, maxA
 		if dryRun {
 			prefix = "[DRY-RUN] "
 		}
+
+		var cName string
+		if len(c.Names) > 0 {
+			cName = c.Names[0]
+		} else {
+			cName = c.ID
+		}
+
 		slog.Info(prefix+"would remove stopped container",
 			"component", "cleaner",
 			"action", "remove_container",
 			"resource_id", c.ID,
+			"name", cName,
 			"image", c.Image,
 			"created", created,
 		)
@@ -93,13 +99,13 @@ func RemoveStoppedContainers(ctx context.Context, cli *dockerclient.Client, maxA
 			continue
 		}
 
-		// Inspect to get size before removal
-		inspect, err := cli.ContainerInspect(ctx, c.ID)
-		if err == nil && inspect.SizeRootFs != nil {
-			freed += *inspect.SizeRootFs
+		// Get size before removal
+		size, err := cli.GetContainerSize(ctx, c.ID)
+		if err == nil {
+			freed += size
 		}
 
-		if err := cli.ContainerRemove(ctx, c.ID, containerRemoveOptions()); err != nil {
+		if err := cli.RemoveContainer(ctx, c.ID); err != nil {
 			slog.Warn("failed to remove container", "id", c.ID, "error", err)
 			continue
 		}

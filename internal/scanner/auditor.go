@@ -5,17 +5,16 @@ import (
 	"log/slog"
 	"os/exec"
 
-	"github.com/docker/docker/api/types/container"
-	dockerclient "github.com/docker/docker/client"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/danangamw/go-janitor/internal/reporter"
+	"github.com/danangamw/go-janitor/internal/runtime"
 	"github.com/danangamw/go-janitor/pkg/semaphore"
 )
 
 // Run orchestrates parallel security scanning of all running container images.
 // It deduplicates images, limits concurrency via semaphore, and handles partial failures.
-func Run(ctx context.Context, cli *dockerclient.Client, severity string, concurrency int) (reporter.ScannerStats, []*ScanResult) {
+func Run(ctx context.Context, cli runtime.ContainerRuntime, severity string, concurrency int) (reporter.ScannerStats, []*ScanResult) {
 	var stats reporter.ScannerStats
 
 	// Check trivy is available.
@@ -25,7 +24,7 @@ func Run(ctx context.Context, cli *dockerclient.Client, severity string, concurr
 		return stats, nil
 	}
 
-	containers, err := cli.ContainerList(ctx, container.ListOptions{All: false})
+	containers, err := cli.ListContainers(ctx, false)
 	if err != nil {
 		slog.Error("failed to list running containers", "error", err)
 		return stats, nil

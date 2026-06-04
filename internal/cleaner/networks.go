@@ -4,8 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/docker/docker/api/types/network"
-	dockerclient "github.com/docker/docker/client"
+	"github.com/danangamw/go-janitor/internal/runtime"
 )
 
 // builtinNetworks are Docker-managed networks that must never be removed.
@@ -16,8 +15,8 @@ var builtinNetworks = map[string]bool{
 }
 
 // RemoveUnusedNetworks removes custom networks that have no containers connected.
-func RemoveUnusedNetworks(ctx context.Context, cli *dockerclient.Client, dryRun bool) (int, error) {
-	networks, err := cli.NetworkList(ctx, network.ListOptions{})
+func RemoveUnusedNetworks(ctx context.Context, cli runtime.ContainerRuntime, dryRun bool) (int, error) {
+	networks, err := cli.ListNetworks(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -27,7 +26,7 @@ func RemoveUnusedNetworks(ctx context.Context, cli *dockerclient.Client, dryRun 
 		if builtinNetworks[n.Name] {
 			continue
 		}
-		if len(n.Containers) > 0 {
+		if n.ContainerCount > 0 {
 			continue
 		}
 
@@ -48,7 +47,7 @@ func RemoveUnusedNetworks(ctx context.Context, cli *dockerclient.Client, dryRun 
 			continue
 		}
 
-		if err := cli.NetworkRemove(ctx, n.ID); err != nil {
+		if err := cli.RemoveNetwork(ctx, n.ID); err != nil {
 			slog.Warn("failed to remove network", "id", n.ID, "name", n.Name, "error", err)
 			continue
 		}

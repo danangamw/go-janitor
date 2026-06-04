@@ -11,14 +11,16 @@ import (
 	"syscall"
 	"time"
 
+	"strings"
+
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
 	"github.com/danangamw/go-janitor/internal/cleaner"
 	"github.com/danangamw/go-janitor/internal/config"
-	dockerpkg "github.com/danangamw/go-janitor/internal/docker"
 	"github.com/danangamw/go-janitor/internal/reporter"
+	"github.com/danangamw/go-janitor/internal/runtime"
 	"github.com/danangamw/go-janitor/internal/scanner"
 )
 
@@ -80,6 +82,7 @@ func buildRoot() *cobra.Command {
 	pf.String("output", "text", "output format: text or json")
 	pf.String("output-file", "", "path for JSON report export")
 	pf.String("webhook", "", "Slack/Discord webhook URL")
+	pf.String("engine", "docker", "container engine to use: docker, podman, auto")
 	pf.String("socket", "/var/run/docker.sock", "Docker Unix socket path")
 	pf.String("log-level", "info", "log level: debug, info, warn, error")
 
@@ -91,6 +94,7 @@ func buildRoot() *cobra.Command {
 	_ = viper.BindPFlag("output", pf.Lookup("output"))
 	_ = viper.BindPFlag("output_file", pf.Lookup("output-file"))
 	_ = viper.BindPFlag("webhook", pf.Lookup("webhook"))
+	_ = viper.BindPFlag("engine", pf.Lookup("engine"))
 	_ = viper.BindPFlag("socket", pf.Lookup("socket"))
 	_ = viper.BindPFlag("log_level", pf.Lookup("log-level"))
 
@@ -143,17 +147,13 @@ func buildCleanCmd(cfgFile *string) *cobra.Command {
 			ctx, stop := runWithContext()
 			defer stop()
 
-			cli, err := dockerpkg.New(cfg.Socket)
+			cli, err := initRuntime(cfg)
 			if err != nil {
 				return err
 			}
 			defer cli.Close()
 
-			if err := cli.Ping(ctx); err != nil {
-				return err
-			}
-
-			stats := cleaner.Run(ctx, cli.Client, cfg.MaxAge, cfg.DryRun)
+			stats := cleaner.Run(ctx, cli, cfg.MaxAge, cfg.DryRun)
 
 			if cfg.OutputFile != "" {
 				r := &reporter.Report{
@@ -190,18 +190,14 @@ func buildScanCmd(cfgFile *string) *cobra.Command {
 			ctx, stop := runWithContext()
 			defer stop()
 
-			cli, err := dockerpkg.New(cfg.Socket)
+			cli, err := initRuntime(cfg)
 			if err != nil {
 				return err
 			}
 			defer cli.Close()
 
-			if err := cli.Ping(ctx); err != nil {
-				return err
-			}
-
 			startedAt := time.Now()
-			scanStats, _ := scanner.Run(ctx, cli.Client, cfg.Severity, cfg.Concurrency)
+			scanStats, _ := scanner.Run(ctx, cli, cfg.Severity, cfg.Concurrency)
 
 			if cfg.Webhook != "" && (scanStats.ImagesWithCritical > 0 || scanStats.ImagesWithHigh > 0) {
 				host, _ := os.Hostname()
@@ -245,21 +241,17 @@ func buildRunCmd(cfgFile *string) *cobra.Command {
 			ctx, stop := runWithContext()
 			defer stop()
 
-			cli, err := dockerpkg.New(cfg.Socket)
+			cli, err := initRuntime(cfg)
 			if err != nil {
 				return err
 			}
 			defer cli.Close()
 
-			if err := cli.Ping(ctx); err != nil {
-				return err
-			}
-
 			startedAt := time.Now()
 			runID := newRunID()
 
-			cleanStats := cleaner.Run(ctx, cli.Client, cfg.MaxAge, cfg.DryRun)
-			scanStats, _ := scanner.Run(ctx, cli.Client, cfg.Severity, cfg.Concurrency)
+			cleanStats := cleaner.Run(ctx, cli, cfg.MaxAge, cfg.DryRun)
+			scanStats, _ := scanner.Run(ctx, cli, cfg.Severity, cfg.Concurrency)
 
 			if cfg.Webhook != "" && (scanStats.ImagesWithCritical > 0 || scanStats.ImagesWithHigh > 0) {
 				host, _ := os.Hostname()
@@ -310,4 +302,76 @@ func newRunID() string {
 		return "unknown"
 	}
 	return id.String()
+}
+
+func initRuntime(cfg *config.Config) (runtime.ContainerRuntime, error) {
+	engine := strings.ToLower(cfg.Engine)
+	socket := cfg.Socket
+
+	if engine == "auto" {
+		socketsToTry := []string{
+			"/var/run/docker.sock",
+			getPodmanRootlessSocket(),
+			"/run/podman/podman.sock",
+		}
+
+		for _, s := range socketsToTry {
+			if s == "" {
+				continue
+			}
+			if _, err := os.Stat(s); err == nil {
+				rt, err := runtime.NewDockerRuntime(s)
+				if err == nil {
+					ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+					pingErr := rt.Ping(ctx)
+					cancel()
+					if pingErr == nil {
+						slog.Info("auto-detected container engine", "socket", s)
+						return rt, nil
+					}
+					rt.Close()
+				}
+			}
+		}
+
+		return nil, fmt.Errorf("could not auto-detect container engine socket (tried docker/podman sockets)")
+	}
+
+	if engine == "podman" && (socket == "/var/run/docker.sock" || socket == "") {
+		slog.Info("podman engine selected, trying to auto-detect podman socket")
+		rootless := getPodmanRootlessSocket()
+		if rootless != "" {
+			if _, err := os.Stat(rootless); err == nil {
+				socket = rootless
+			} else if _, err := os.Stat("/run/podman/podman.sock"); err == nil {
+				socket = "/run/podman/podman.sock"
+			}
+		} else if _, err := os.Stat("/run/podman/podman.sock"); err == nil {
+			socket = "/run/podman/podman.sock"
+		}
+	}
+
+	slog.Info("connecting to container engine", "engine", engine, "socket", socket)
+	rt, err := runtime.NewDockerRuntime(socket)
+	if err != nil {
+		return nil, err
+	}
+
+	// Verify connection
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := rt.Ping(ctx); err != nil {
+		rt.Close()
+		return nil, err
+	}
+
+	return rt, nil
+}
+
+func getPodmanRootlessSocket() string {
+	uid := os.Getuid()
+	if uid == 0 {
+		return ""
+	}
+	return fmt.Sprintf("/run/user/%d/podman/podman.sock", uid)
 }
