@@ -142,7 +142,7 @@ func buildCleanCmd(cfgFile *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			reporter.InitLogger(cfg.LogLevel)
+			reporter.InitLogger(cfg.LogLevel, cfg.Output)
 
 			ctx, stop := runWithContext()
 			defer stop()
@@ -154,6 +154,10 @@ func buildCleanCmd(cfgFile *string) *cobra.Command {
 			defer cli.Close()
 
 			stats := cleaner.Run(ctx, cli, cfg.MaxAge, cfg.DryRun)
+
+			if strings.ToLower(cfg.Output) == "text" {
+				reporter.PrintCleanerSummary(version, stats, cfg.MaxAge, cfg.DryRun)
+			}
 
 			if cfg.OutputFile != "" {
 				r := &reporter.Report{
@@ -185,7 +189,7 @@ func buildScanCmd(cfgFile *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			reporter.InitLogger(cfg.LogLevel)
+			reporter.InitLogger(cfg.LogLevel, cfg.Output)
 
 			ctx, stop := runWithContext()
 			defer stop()
@@ -197,7 +201,32 @@ func buildScanCmd(cfgFile *string) *cobra.Command {
 			defer cli.Close()
 
 			startedAt := time.Now()
-			scanStats, _ := scanner.Run(ctx, cli, cfg.Severity, cfg.Concurrency)
+			scanStats, results := scanner.Run(ctx, cli, cfg.Severity, cfg.Concurrency)
+
+			if strings.ToLower(cfg.Output) == "text" {
+				var rows []reporter.ScanRow
+				for _, r := range results {
+					hasCritical := false
+					hasHigh := false
+					for _, v := range r.Vulnerabilities {
+						if v.Severity == "CRITICAL" {
+							hasCritical = true
+						}
+						if v.Severity == "HIGH" {
+							hasHigh = true
+						}
+					}
+					rows = append(rows, reporter.ScanRow{
+						ImageID:     r.ImageID,
+						Vulns:       len(r.Vulnerabilities),
+						HasCritical: hasCritical,
+						HasHigh:     hasHigh,
+						DurationMs:  r.ScanDuration.Milliseconds(),
+						Error:       r.Error,
+					})
+				}
+				reporter.PrintScanTable(version, rows, scanStats, cfg.Severity, cfg.Concurrency)
+			}
 
 			if cfg.Webhook != "" && (scanStats.ImagesWithCritical > 0 || scanStats.ImagesWithHigh > 0) {
 				host, _ := os.Hostname()
@@ -236,7 +265,7 @@ func buildRunCmd(cfgFile *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			reporter.InitLogger(cfg.LogLevel)
+			reporter.InitLogger(cfg.LogLevel, cfg.Output)
 
 			ctx, stop := runWithContext()
 			defer stop()
@@ -251,7 +280,34 @@ func buildRunCmd(cfgFile *string) *cobra.Command {
 			runID := newRunID()
 
 			cleanStats := cleaner.Run(ctx, cli, cfg.MaxAge, cfg.DryRun)
-			scanStats, _ := scanner.Run(ctx, cli, cfg.Severity, cfg.Concurrency)
+			scanStats, results := scanner.Run(ctx, cli, cfg.Severity, cfg.Concurrency)
+
+			if strings.ToLower(cfg.Output) == "text" {
+				reporter.PrintCleanerSummary(version, cleanStats, cfg.MaxAge, cfg.DryRun)
+
+				var rows []reporter.ScanRow
+				for _, r := range results {
+					hasCritical := false
+					hasHigh := false
+					for _, v := range r.Vulnerabilities {
+						if v.Severity == "CRITICAL" {
+							hasCritical = true
+						}
+						if v.Severity == "HIGH" {
+							hasHigh = true
+						}
+					}
+					rows = append(rows, reporter.ScanRow{
+						ImageID:     r.ImageID,
+						Vulns:       len(r.Vulnerabilities),
+						HasCritical: hasCritical,
+						HasHigh:     hasHigh,
+						DurationMs:  r.ScanDuration.Milliseconds(),
+						Error:       r.Error,
+					})
+				}
+				reporter.PrintScanTable(version, rows, scanStats, cfg.Severity, cfg.Concurrency)
+			}
 
 			if cfg.Webhook != "" && (scanStats.ImagesWithCritical > 0 || scanStats.ImagesWithHigh > 0) {
 				host, _ := os.Hostname()
