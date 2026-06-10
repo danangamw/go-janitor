@@ -31,12 +31,12 @@ func Run(ctx context.Context, cli runtime.ContainerRuntime, severity string, con
 	}
 
 	// Deduplicate image IDs.
-	seen := make(map[string]bool)
+	seen := make(map[string]string)
 	var uniqueImages []string
 	for _, c := range containers {
 		id := c.ImageID
-		if !seen[id] {
-			seen[id] = true
+		if _, ok := seen[id]; !ok {
+			seen[id] = c.Image
 			uniqueImages = append(uniqueImages, id)
 		}
 	}
@@ -57,6 +57,7 @@ func Run(ctx context.Context, cli runtime.ContainerRuntime, severity string, con
 
 	for i, imageID := range uniqueImages {
 		i, imageID := i, imageID // capture loop variables
+		imageName := seen[imageID]
 
 		g.Go(func() error {
 			// Check cache first.
@@ -67,6 +68,7 @@ func Run(ctx context.Context, cli runtime.ContainerRuntime, severity string, con
 					"resource_id", imageID,
 				)
 				stats.CacheHits++
+				cached.ImageName = imageName
 				results[i] = cached
 				return nil
 			}
@@ -78,9 +80,11 @@ func Run(ctx context.Context, cli runtime.ContainerRuntime, severity string, con
 				"component", "scanner",
 				"action", "scan_start",
 				"resource_id", imageID,
+				"image_name", imageName,
 			)
 
 			r := scanImage(gctx, imageID, severity)
+			r.ImageName = imageName
 			imgCache.set(imageID, r)
 			results[i] = r
 

@@ -218,6 +218,7 @@ func buildScanCmd(cfgFile *string) *cobra.Command {
 					}
 					rows = append(rows, reporter.ScanRow{
 						ImageID:     r.ImageID,
+						ImageName:   r.ImageName,
 						Vulns:       len(r.Vulnerabilities),
 						HasCritical: hasCritical,
 						HasHigh:     hasHigh,
@@ -299,6 +300,7 @@ func buildRunCmd(cfgFile *string) *cobra.Command {
 					}
 					rows = append(rows, reporter.ScanRow{
 						ImageID:     r.ImageID,
+						ImageName:   r.ImageName,
 						Vulns:       len(r.Vulnerabilities),
 						HasCritical: hasCritical,
 						HasHigh:     hasHigh,

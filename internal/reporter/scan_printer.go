@@ -11,6 +11,7 @@ import (
 // ScanRow holds clean representation of a scan result for formatting
 type ScanRow struct {
 	ImageID      string
+	ImageName    string
 	Vulns        int
 	HasCritical  bool
 	HasHigh      bool
@@ -28,15 +29,19 @@ func PrintScanTable(version string, rows []ScanRow, stats ScannerStats, severity
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
 	// Header
 	fmt.Fprintln(w, "  \033[1mIMAGE\033[0m\t\033[1mVULNS\033[0m\t\033[1mSEVERITY\033[0m\t\033[1mTIME\033[0m")
-	fmt.Fprintln(w, "  \033[1m─────────────────────────────────────────────────────\033[0m")
+	fmt.Fprintln(w, "  \033[1m─────────────────────────────────────────────────────────────────────────\033[0m")
 
 	for _, r := range rows {
-		// Truncate image ID to make it fit nicely
-		imgID := r.ImageID
-		if strings.HasPrefix(imgID, "sha256:") && len(imgID) > 19 {
-			imgID = imgID[:19] + "..."
-		} else if len(imgID) > 12 {
-			imgID = imgID[:12] + "..."
+		displayName := r.ImageName
+		if displayName == "" {
+			displayName = r.ImageID
+		}
+
+		// Truncate display name to make it fit nicely
+		if strings.HasPrefix(displayName, "sha256:") && len(displayName) > 19 {
+			displayName = displayName[:19] + "..."
+		} else if len(displayName) > 35 {
+			displayName = displayName[:32] + "..."
 		}
 
 		timeStr := fmt.Sprintf("%.2fs", float64(r.DurationMs)/1000.0)
@@ -60,10 +65,10 @@ func PrintScanTable(version string, rows []ScanRow, stats ScannerStats, severity
 			}
 		}
 
-		fmt.Fprintf(w, "  %s\t%s\t%s\t%s\n", imgID, vulnStr, statusStr, timeStr)
+		fmt.Fprintf(w, "  %s\t%s\t%s\t%s\n", displayName, vulnStr, statusStr, timeStr)
 	}
 
-	fmt.Fprintln(w, "  \033[1m─────────────────────────────────────────────────────\033[0m")
+	fmt.Fprintln(w, "  \033[1m─────────────────────────────────────────────────────────────────────────\033[0m")
 	w.Flush()
 
 	// Print summary line

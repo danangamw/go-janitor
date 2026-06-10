@@ -22,6 +22,7 @@ type CVE struct {
 // ScanResult holds the outcome of scanning a single image.
 type ScanResult struct {
 	ImageID         string
+	ImageName       string
 	Vulnerabilities []CVE
 	Error           string
 	ScanDuration    time.Duration
